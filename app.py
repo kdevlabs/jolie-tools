@@ -16,11 +16,11 @@ async def fetch_links(client: httpx.AsyncClient, url: str) -> pd.DataFrame:
 
         links = [
             {
-                "Text": a.text.strip(),
                 "Status": "200 OK - Success",
+                "Text": a.text.strip(),
+                "URL": urljoin(url, a.get("href")),
                 "Parent URL": url,
                 "Parent Title": parent_title,  # Include parent title
-                "URL": urljoin(url, a.get("href")),
             }
             for a in soup.find_all("a", href=True)
             if "razer.com" in urljoin(url, a.get("href"))
@@ -32,11 +32,11 @@ async def fetch_links(client: httpx.AsyncClient, url: str) -> pd.DataFrame:
         return pd.DataFrame(
             [
                 {
-                    "Text": "Failed to fetch",
                     "Status": error_message,
+                    "Text": "Failed to fetch",
+                    "URL": "",
                     "Parent URL": url,
                     "Parent Title": "Failed to fetch",
-                    "URL": "",
                 }
             ]
         )
@@ -44,11 +44,11 @@ async def fetch_links(client: httpx.AsyncClient, url: str) -> pd.DataFrame:
         return pd.DataFrame(
             [
                 {
-                    "Text": "Failed to fetch",
                     "Status": "Error - Could not fetch data",
+                    "Text": "Failed to fetch",
+                    "URL": "",
                     "Parent URL": url,
                     "Parent Title": "Failed to fetch",
-                    "URL": "",
                 }
             ]
         )
@@ -94,7 +94,7 @@ def app():
     st.title("Razer Link Checker")
 
     start_url = st.text_input("Enter start URL", value="https://www.razer.com/")
-    max_depth = st.number_input("Max crawl depth", value=5, min_value=1)
+    max_depth = st.number_input("Max crawl depth", value=3, min_value=1)
 
     if st.button("Start Checking..."):
         results = asyncio.run(crawl(start_url, max_depth))
