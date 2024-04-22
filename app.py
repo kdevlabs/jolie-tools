@@ -38,20 +38,15 @@ async def fetch_link(client: httpx.AsyncClient, url: str, status_text, parent_ur
     try:
         response = await client.get(url, follow_redirects=True)
         explain = get_friendly_http_error_message(response.status_code)
-        if response.history:
-            # There were redirects, handle accordingly by converting URL objects to strings
-            redirects = " ===>>>  ".join([str(resp.url) for resp in response.history] + [str(response.url)])
-            status_text.status(f"Redirected from {redirects}. Final URL: {response.url} - Result: {explain}")
-        else:
-            status_text.status(f"Checked URL [{url}] from [{parent_url}] - Result: {explain}")
-
+        status_text.status(f"Checked URL [{url}] from [{parent_url}] - Result: {explain}")
         response.raise_for_status()
         return response
     except httpx.HTTPStatusError as e:
         # If an HTTP status error occurs, include the redirect history in the error message, if any
         redirects = " -> ".join([str(resp.url) for resp in e.response.history] + [str(e.request.url)])
         error_message = get_friendly_http_error_message(e.response.status_code)
-        st.error(f"🚨 Error Link From Page: [{parent_url}] --- 🔥 Error Link: [{redirects}] ({url}) ---- \n \n ----- 🔥 Text: [{link_text}] --- \n 🔥 Error: {error_message}")
+        if e.response.status_code == 404:
+            st.error(f"🚨 Error Link From Page: [{parent_url}] --- 🔥 Error Link: [{redirects}] ({url}) ---- \n \n ----- 🔥 Text: [{link_text}] --- \n 🔥 Error: {error_message}")
         return None
     except httpx.RequestError as e:
         # Handling network-related errors
