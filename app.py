@@ -36,7 +36,7 @@ def get_friendly_http_error_message(status_code: int) -> str:
 
 async def fetch_link(client: httpx.AsyncClient, url: str, status_text, parent_url="", link_text: str = "No text"):
     try:
-        response = await client.get(url)
+        response = await client.get(url, follow_redirects=True)
         explain = get_friendly_http_error_message(response.status_code)
         status_text.status(f"Checked url [{url}] from [{parent_url}]- result:{explain}")
         response.raise_for_status()
