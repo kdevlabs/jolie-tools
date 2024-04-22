@@ -84,57 +84,68 @@ def get_friendly_http_error_message(status_code: int) -> str:
     else:
         return f"{status_code} - Other error."
 
-async def crawl(start_url: str, max_depth: int, progress_bar, status_text, max_concurrent: int = 10) -> (pd.DataFrame, pd.DataFrame, pd.DataFrame):
-    async with httpx.AsyncClient() as client:
-        to_visit = deque([(start_url, 0)])
-        seen_urls = set()
-        success_results = pd.DataFrame()
-        error_results = pd.DataFrame()
-        link_log = pd.DataFrame()
-        total_urls_processed = 0
-        total_urls_to_process = 1  # Start with the initial URL
-        semaphore = asyncio.Semaphore(max_concurrent)  # Semaphore to control concurrency
+def crawl(start_url: str, max_depth: int, progress_bar, status_text, max_concurrent: int = 10):
 
-        async def process_url(current_url, current_depth):
-            nonlocal total_urls_processed
-            async with semaphore:
-                if current_url in seen_urls:
-                    return
-                seen_urls.add(current_url)
-                status_text.text(f"Crawling {current_url} at depth {current_depth}... ({total_urls_processed}/{total_urls_to_process})")
-                success_links_df, error_links_df = await fetch_links(client, current_url, status_text)
-                return success_links_df, error_links_df
+    # Initialize Streamlit session state if not already set
+    if 'total_urls_processed' not in st.session_state:
+        st.session_state.total_urls_processed = 0
+    if 'total_urls_to_process' not in st.session_state:
+        st.session_state.total_urls_to_process = 1  # Start with the initial URL
 
-        while to_visit:
-            tasks = []
-            while to_visit and len(tasks) < max_concurrent:
-                current_url, current_depth = to_visit.popleft()
-                tasks.append(process_url(current_url, current_depth))
+    async def async_crawl():
+        async with httpx.AsyncClient() as client:
+            to_visit = deque([(start_url, 0)])
+            seen_urls = set()
+            success_results = pd.DataFrame()
+            error_results = pd.DataFrame()
+            link_log = pd.DataFrame()
+            semaphore = asyncio.Semaphore(max_concurrent)  # Semaphore to control concurrency
 
-            results = await asyncio.gather(*tasks)
-            for success_links_df, error_links_df in results:
-                if success_links_df is not None and error_links_df is not None:
+            async def process_url(current_url, current_depth):
+                async with semaphore:
+                    if current_url in seen_urls or current_depth > max_depth:
+                        return pd.DataFrame(), pd.DataFrame()  # Return empty DataFrames instead of None
+                    seen_urls.add(current_url)
+
+                    # Local status update for this task
+                    status_text.text(f"Crawling {current_url} at depth {current_depth}... ({st.session_state.total_urls_processed}/{st.session_state.total_urls_to_process})")
+                    success_links_df, error_links_df = await fetch_links(client, current_url, status_text)
+
+                    # Update the state counters
+                    st.session_state.total_urls_processed += 1
+                    progress_bar.progress(st.session_state.total_urls_processed / st.session_state.total_urls_to_process)
+
+                    # Discover new URLs
+                    if success_links_df is not None:
+                        for _, row in success_links_df.iterrows():
+                            if row["URL"] not in seen_urls and current_depth + 1 <= max_depth:
+                                to_visit.append((row["URL"], current_depth + 1))
+                                st.session_state.total_urls_to_process += 1
+                    return success_links_df, error_links_df
+
+            while to_visit:
+                tasks = []
+                while to_visit and len(tasks) < max_concurrent:
+                    current_url, current_depth = to_visit.popleft()
+                    tasks.append(process_url(current_url, current_depth))
+
+                results = await asyncio.gather(*tasks)
+                for success_links_df, error_links_df in results:
                     success_results = pd.concat([success_results, success_links_df], ignore_index=True)
                     error_results = pd.concat([error_results, error_links_df], ignore_index=True)
-
+                    
                     link_log = pd.concat([link_log, pd.DataFrame([{
                         "URL": current_url,
                         "Status": "Fetched",
                         "Depth": current_depth
                     }])], ignore_index=True)
 
-                    total_urls_processed += 1
-                    progress_bar.progress(total_urls_processed / total_urls_to_process)
+            return success_results.drop_duplicates(subset=["URL"]), error_results.drop_duplicates(subset=["URL"]), link_log
 
-                    for _, row in success_links_df.iterrows():
-                        if row["URL"] not in seen_urls and current_depth + 1 <= max_depth:
-                            to_visit.append((row["URL"], current_depth + 1))
-                            total_urls_to_process += 1
+    # Run the async part of the crawl function
+    return asyncio.run(async_crawl())
 
-        return success_results.drop_duplicates(subset=["URL"]), error_results.drop_duplicates(subset=["URL"]), link_log
-
-# This function now uses a semaphore to limit the number of concurrent fetch operations to 10.
-
+# This implementation assumes Streamlit is correctly set up and
 
 def app():
     st.title("Razer Link Checker")
@@ -173,8 +184,6 @@ def app():
                 st.write("No link attempts logged.")
         except Exception as e:
             st.error(f"Failed to crawl due to an error: {e}")
-
-# This adjusted function now displays a comprehensive log of all link attempts, enhancing transparency and tracking.
 
 if __name__ == "__main__":
     st.set_page_config(layout="wide") 
