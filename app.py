@@ -69,7 +69,7 @@ async def parse_links(client: httpx.AsyncClient, base_url: str, html_content: st
         if "www.razer.com" in link_url:
             link_text = a.text.strip() if a.text.strip() else (a.parent.text.strip() if a.parent else '')
             if not link_text:
-                link_text = a.parent.parent.text.strip() if a.parent and a.parent.parent else 'No text available'
+                link_text = a.parent.parent.parent.text.strip() if a.parent and a.parent.parent and a.parent.parent.parent else 'No text available'
 
             response = await fetch_link(client, link_url, status_text, base_url, link_text)
             if response:
@@ -156,7 +156,7 @@ def app():
     if submit_button:
         # Disable UI components here if Streamlit supports dynamic updates in future releases
         with st.spinner('Checking in progress...'):
-            success_df, error_df = asyncio.run(crawl(start_url, max_depth, 10))
+            success_df, error_df = asyncio.run(crawl(start_url, max_depth, 20))
             st.session_state['success_links'] = success_df
             st.session_state['error_links'] = error_df
         
