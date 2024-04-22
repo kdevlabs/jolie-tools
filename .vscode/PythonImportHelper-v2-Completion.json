@@ -26,22 +26,6 @@
         "documentation": {}
     },
     {
-        "label": "BeautifulSoup",
-        "importPath": "bs4",
-        "description": "bs4",
-        "isExtraImport": true,
-        "detail": "bs4",
-        "documentation": {}
-    },
-    {
-        "label": "urljoin",
-        "importPath": "urllib.parse",
-        "description": "urllib.parse",
-        "isExtraImport": true,
-        "detail": "urllib.parse",
-        "documentation": {}
-    },
-    {
         "label": "urljoin",
         "importPath": "urllib.parse",
         "description": "urllib.parse",
@@ -68,56 +52,6 @@
         "documentation": {}
     },
     {
-        "label": "List",
-        "importPath": "typing",
-        "description": "typing",
-        "isExtraImport": true,
-        "detail": "typing",
-        "documentation": {}
-    },
-    {
-        "label": "Optional",
-        "importPath": "typing",
-        "description": "typing",
-        "isExtraImport": true,
-        "detail": "typing",
-        "documentation": {}
-    },
-    {
-        "label": "Tuple",
-        "importPath": "typing",
-        "description": "typing",
-        "isExtraImport": true,
-        "detail": "typing",
-        "documentation": {}
-    },
-    {
-        "label": "requests",
-        "kind": 6,
-        "isExtraImport": true,
-        "importPath": "requests",
-        "description": "requests",
-        "detail": "requests",
-        "documentation": {}
-    },
-    {
-        "label": "Queue",
-        "importPath": "queue",
-        "description": "queue",
-        "isExtraImport": true,
-        "detail": "queue",
-        "documentation": {}
-    },
-    {
-        "label": "time",
-        "kind": 6,
-        "isExtraImport": true,
-        "importPath": "time",
-        "description": "time",
-        "detail": "time",
-        "documentation": {}
-    },
-    {
         "label": "get_friendly_http_error_message",
         "kind": 2,
         "importPath": "app",
@@ -131,35 +65,8 @@
         "kind": 2,
         "importPath": "app",
         "description": "app",
-        "peekOfCode": "def app():\n    st.title(\"Razer Link Checker\")\n    start_url = st.text_input(\"Enter start URL\", value=\"https://www.razer.com/\")\n    max_depth = st.number_input(\"Max crawl depth\", value=5, min_value=1)\n    if st.button(\"Start Checking...\"):\n        results = asyncio.run(crawl(start_url, max_depth))\n        if not results.empty:\n            st.dataframe(results)\n        else:\n            st.write(\"No links found or all fetch attempts failed.\")",
+        "peekOfCode": "def app():\n    st.title(\"Razer Link Checker\")\n    start_url = st.text_input(\"Enter start URL\", value=\"https://www.razer.com/\")\n    max_depth = st.number_input(\"Max crawl depth\", value=3, min_value=1)\n    if st.button(\"Start Checking...\"):\n        results = asyncio.run(crawl(start_url, max_depth))\n        if not results.empty:\n            st.dataframe(results)\n        else:\n            st.write(\"No links found or all fetch attempts failed.\")",
         "detail": "app",
-        "documentation": {}
-    },
-    {
-        "label": "fetch_links",
-        "kind": 2,
-        "importPath": "main",
-        "description": "main",
-        "peekOfCode": "def fetch_links(url: str) -> Tuple[List[dict], Optional[str], Optional[str]]:\n    headers = {\n        \"User-Agent\": \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3\"\n    }\n    attempts = 0\n    max_attempts = 3\n    with st.status(f\"Fetching link {url}...\"):\n        while attempts < max_attempts:\n            try:\n                # Using Streamlit's status to display current fetching status",
-        "detail": "main",
-        "documentation": {}
-    },
-    {
-        "label": "crawl",
-        "kind": 2,
-        "importPath": "main",
-        "description": "main",
-        "peekOfCode": "def crawl(\n    start_url: str, max_depth: int, links_list: list, errors: list\n) -> Tuple[List[dict], List[Tuple[str, str]]]:\n    q = Queue()\n    q.put((start_url, 0, \"Root Page\"))  # Include a default title for the root\n    seen_urls = set()  # Tracks URLs that have been seen\n    while not q.empty():\n        current_url, current_depth, parent_title = q.get()\n        if current_url not in seen_urls:\n            seen_urls.add(current_url)  # Mark the current URL as seen",
-        "detail": "main",
-        "documentation": {}
-    },
-    {
-        "label": "app",
-        "kind": 2,
-        "importPath": "main",
-        "description": "main",
-        "peekOfCode": "def app():\n    st.title(\"Website Link Crawler\")\n    # Initialize or get the existing list and errors list from the state\n    if \"links_list\" not in st.session_state:\n        st.session_state[\"links_list\"] = []\n    if \"errors\" not in st.session_state:\n        st.session_state[\"errors\"] = []\n    start_url = st.sidebar.text_input(\n        \"Enter start URL\", value=\"https://www.razer.com/sitemap\"\n    )",
-        "detail": "main",
         "documentation": {}
     }
 ]

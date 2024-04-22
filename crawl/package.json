@@ -1,0 +1,20 @@
+{
+  "name": "crawl",
+  "module": "index.ts",
+  "type": "module",
+  "peerDependencies": {
+    "typescript": "^5.4.2"
+  },
+  "scripts": {
+    "preinstall": "playwright install"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0-rc.12",
+    "crawlee": "^3.8.1",
+    "playwright": "^1.42.1",
+    "puppeteer": "^22.5.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.7.1"
+  }
+}

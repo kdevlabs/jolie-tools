@@ -1,0 +1,9 @@
+{
+	"id": "HRnQ0RGbUxBNcZ5",
+	"json": "{\"id\":\"HRnQ0RGbUxBNcZ5\",\"url\":\"https://www.razer.com/store\",\"loadedUrl\":\"https://www.razer.com/store\",\"uniqueKey\":\"https://www.razer.com/store\",\"method\":\"GET\",\"noRetry\":false,\"retryCount\":2,\"errorMessages\":[\"ArgumentError: Expected property `urls` to be of type `array` but received type `undefined`\\n(array `urls`) source is not iterable in object `options`\\n    at ow (/Users/khoahoang/Desktop/jolie/crawl/node_modules/ow/dist/index.js:33:28)\\n    at enqueueLinks (/Users/khoahoang/Desktop/jolie/crawl/node_modules/@crawlee/src/enqueue_links/enqueue_links.ts:244:7)\\n    at PuppeteerCrawler.extractProductDetails (/Users/khoahoang/Desktop/jolie/crawl/index.ts:29:11)\\n    at wrap (/Users/khoahoang/Desktop/jolie/crawl/node_modules/@apify/src/index.ts:77:27)\",\"ArgumentError: Expected property `urls` to be of type `array` but received type `undefined`\\n(array `urls`) source is not iterable in object `options`\\n    at ow (/Users/khoahoang/Desktop/jolie/crawl/node_modules/ow/dist/index.js:33:28)\\n    at enqueueLinks (/Users/khoahoang/Desktop/jolie/crawl/node_modules/@crawlee/src/enqueue_links/enqueue_links.ts:244:7)\\n    at PuppeteerCrawler.extractProductDetails (/Users/khoahoang/Desktop/jolie/crawl/index.ts:29:11)\\n    at wrap (/Users/khoahoang/Desktop/jolie/crawl/node_modules/@apify/src/index.ts:77:27)\"],\"headers\":{},\"userData\":{\"__crawlee\":{\"state\":5}}}",
+	"method": "GET",
+	"orderNo": 1710671300416,
+	"retryCount": 2,
+	"uniqueKey": "https://www.razer.com/store",
+	"url": "https://www.razer.com/store"
+}
