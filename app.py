@@ -38,14 +38,20 @@ async def fetch_link(client: httpx.AsyncClient, url: str, status_text, parent_ur
     try:
         response = await client.get(url, follow_redirects=True)
         explain = get_friendly_http_error_message(response.status_code)
-        status_text.status(f"Checked url [{url}] from [{parent_url}]- result:{explain}")
+        if response.history:
+            # There were redirects, handle accordingly by converting URL objects to strings
+            redirects = " ===>>>  ".join([str(resp.url) for resp in response.history] + [str(response.url)])
+            status_text.status(f"Redirected from {redirects}. Final URL: {response.url} - Result: {explain}")
+        else:
+            status_text.status(f"Checked URL [{url}] from [{parent_url}] - Result: {explain}")
+
         response.raise_for_status()
         return response
     except httpx.HTTPStatusError as e:
-        if e.response.status_code == '404':
-            # Enhanced error message with parent URL context
-            error_message = get_friendly_http_error_message(e.response.status_code)
-            st.error(f"Failed to fetch {url} (Parent URL: {parent_url}) (Text: {link_text}): {error_message}")
+        # If an HTTP status error occurs, include the redirect history in the error message, if any
+        redirects = " -> ".join([str(resp.url) for resp in e.response.history] + [str(e.request.url)])
+        error_message = get_friendly_http_error_message(e.response.status_code)
+        st.error(f"🚨 Error Link From Page: [{parent_url}] --- 🔥 Error Link: [{redirects}] ({url}) ---- \n \n ----- 🔥 Text: [{link_text}] --- \n 🔥 Error: {error_message}")
         return None
     except httpx.RequestError as e:
         # Handling network-related errors
@@ -60,54 +66,56 @@ async def fetch_link(client: httpx.AsyncClient, url: str, status_text, parent_ur
 async def parse_links(client: httpx.AsyncClient, base_url: str, html_content: str, status_text):
     soup = BeautifulSoup(html_content, "html.parser")
     parent_title = soup.title.text if soup.title else "No Title Found"
-    links = []
+    success_links = []
+    error_links = []  # Separate list to collect error links
 
     for a in soup.find_all("a", href=True):
         link_url = urljoin(base_url, a.get("href"))
         if "razer.com" in link_url:
-            # Attempt to get text from the parent or grandparent if direct text is not useful
             link_text = a.text.strip() if a.text.strip() else (a.parent.text.strip() if a.parent else '')
-            if not link_text:  # Additional fallback to the grandparent
+            if not link_text:
                 link_text = a.parent.parent.text.strip() if a.parent and a.parent.parent else 'No text available'
 
-            try:
-                response = await fetch_link(client, link_url, status_text, base_url, link_text)
-                if response and response.status_code == 200:
-                    links.append({
+            response = await fetch_link(client, link_url, status_text, base_url, link_text)
+            if response:
+                if response.status_code == 200:
+                    success_links.append({
                         "Status": f"{response.status_code} OK - Success",
                         "Text": link_text,
                         "URL": link_url,
                         "Parent URL": base_url,
                         "Parent Title": parent_title,
                     })
-                elif response:
-                    links.append({
+                else:
+                    # Collect error links differently if the status code is not 200
+                    error_links.append({
                         "Status": f"{response.status_code} - Error",
                         "Text": link_text,
                         "URL": link_url,
                         "Parent URL": base_url,
                         "Parent Title": parent_title,
                     })
-            except httpx.RequestError as e:
-                st.error(f"Request failed for {link_url}: {str(e)}")
-                links.append({
-                    "Status": "Request Error",
+            else:
+                # Append to error links if response is None (indicating an error occurred in fetch_link)
+                error_links.append({
+                    "Status": "Fetch Error",
                     "Text": link_text,
                     "URL": link_url,
                     "Parent URL": base_url,
                     "Parent Title": parent_title,
                 })
 
-    return links
+    return success_links, error_links
+
 
 async def crawl_link(client: httpx.AsyncClient, url: str, status_text, semaphore):
     async with semaphore:
         status_text.text(f"Checking link: {url}")
         response = await fetch_link(client, url, status_text)
         if response:
-            return await parse_links(client, url, response.text, status_text)
-        return []
-    
+            success_links, error_links = await parse_links(client, url, response.text, status_text)
+            return success_links, error_links
+        return [], []
 
 async def crawl(start_url: str, max_depth: int, max_concurrent: int):
     async with httpx.AsyncClient() as client:
@@ -116,7 +124,8 @@ async def crawl(start_url: str, max_depth: int, max_concurrent: int):
         progress_bar = st.progress(0)
         to_visit = deque([(start_url, 0)])
         seen_urls = set()
-        all_links = []
+        all_success_links = []
+        all_error_links = []
 
         while to_visit:
             tasks = []
@@ -124,30 +133,48 @@ async def crawl(start_url: str, max_depth: int, max_concurrent: int):
                 current_url, current_depth = to_visit.popleft()
                 if current_url not in seen_urls and current_depth <= max_depth:
                     seen_urls.add(current_url)
-                    task = crawl_link(client, current_url, status_text, semaphore)
-                    tasks.append(task)
+                    tasks.append(crawl_link(client, current_url, status_text, semaphore))
             links_batch = await asyncio.gather(*tasks)
-            for links in links_batch:
-                all_links.extend(links)
-                for link in links:
+            for success_links, error_links in links_batch:
+                all_success_links.extend(success_links)
+                all_error_links.extend(error_links)
+                for link in success_links:  # Assuming success_links contains dictionaries
                     if link["URL"] not in seen_urls:
                         to_visit.append((link["URL"], current_depth + 1))
 
         progress_bar.empty()
         status_text.empty()
-        return pd.DataFrame(all_links)
-    
+        return pd.DataFrame(all_success_links), pd.DataFrame(all_error_links)
+
+
 def app():
     st.title("Razer Link Checker")
-    start_url = st.text_input("Enter start URL", value="https://www.razer.com/gaming-mice/razer-orochi-v2")
-    max_depth = st.number_input("Max crawl depth", value=1, min_value=0)
-    if st.button("Start Checking..."):
-        links_df = asyncio.run(crawl(start_url, max_depth, 5))
-        if not links_df.empty:
-            st.subheader("Links Found")
-            st.dataframe(links_df)
+
+    # Disable the form while processing to prevent multiple submissions
+    with st.form(key='my_form'):
+        start_url = st.text_input("Enter start URL", value="https://www.razer.com")
+        max_depth = st.number_input("Max crawl depth", value=0, min_value=0)
+        submit_button = st.form_submit_button("Start Checking...")
+
+    if submit_button:
+        # Disable UI components here if Streamlit supports dynamic updates in future releases
+        with st.spinner('Checking in progress...'):
+            success_df, error_df = asyncio.run(crawl(start_url, max_depth, 10))
+            st.session_state['success_links'] = success_df
+            st.session_state['error_links'] = error_df
+        
+        # Display results
+        if not st.session_state['success_links'].empty:
+            st.subheader("Successful Links")
+            st.dataframe(st.session_state['success_links'])
         else:
-            st.write("No links found.")
+            st.write("No successful links found.")
+        
+        if not st.session_state['error_links'].empty:
+            st.subheader("Error Links")
+            st.dataframe(st.session_state['error_links'])
+        else:
+            st.write("No error links encountered.")
 
 if __name__ == "__main__":
     st.set_page_config(layout="wide")
