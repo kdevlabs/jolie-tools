@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 import pandas as pd
 import streamlit as st
-
+from collections import deque
 
 # Updating the fetch_links function to provide status updates for each link being checked
 
@@ -84,11 +84,7 @@ def get_friendly_http_error_message(status_code: int) -> str:
     else:
         return f"{status_code} - Other error."
 
-# Uncomment to test the function
-# asyncio.run(fetch_links(httpx.AsyncClient(), "https://www.razer.com/"))
-from collections import deque# Enhancing the crawl function to better handle and log skipped URLs, and include a counter in status updates
-
-async def crawl(start_url: str, max_depth: int, progress_bar, status_text) -> (pd.DataFrame, pd.DataFrame, pd.DataFrame):
+async def crawl(start_url: str, max_depth: int, progress_bar, status_text, max_concurrent: int = 10) -> (pd.DataFrame, pd.DataFrame, pd.DataFrame):
     async with httpx.AsyncClient() as client:
         to_visit = deque([(start_url, 0)])
         seen_urls = set()
@@ -97,50 +93,47 @@ async def crawl(start_url: str, max_depth: int, progress_bar, status_text) -> (p
         link_log = pd.DataFrame()
         total_urls_processed = 0
         total_urls_to_process = 1  # Start with the initial URL
+        semaphore = asyncio.Semaphore(max_concurrent)  # Semaphore to control concurrency
+
+        async def process_url(current_url, current_depth):
+            nonlocal total_urls_processed
+            async with semaphore:
+                if current_url in seen_urls:
+                    return
+                seen_urls.add(current_url)
+                status_text.text(f"Crawling {current_url} at depth {current_depth}... ({total_urls_processed}/{total_urls_to_process})")
+                success_links_df, error_links_df = await fetch_links(client, current_url, status_text)
+                return success_links_df, error_links_df
 
         while to_visit:
-            current_url, current_depth = to_visit.popleft()
-            if current_url in seen_urls:
-                link_log = pd.concat([link_log, pd.DataFrame([{
-                    "URL": current_url,
-                    "Status": "Skipped - Already Seen",
-                    "Depth": current_depth
-                }])], ignore_index=True)
-                continue
+            tasks = []
+            while to_visit and len(tasks) < max_concurrent:
+                current_url, current_depth = to_visit.popleft()
+                tasks.append(process_url(current_url, current_depth))
 
-            if current_depth > max_depth:
-                link_log = pd.concat([link_log, pd.DataFrame([{
-                    "URL": current_url,
-                    "Status": "Skipped - Beyond Max Depth",
-                    "Depth": current_depth
-                }])], ignore_index=True)
-                continue
+            results = await asyncio.gather(*tasks)
+            for success_links_df, error_links_df in results:
+                if success_links_df is not None and error_links_df is not None:
+                    success_results = pd.concat([success_results, success_links_df], ignore_index=True)
+                    error_results = pd.concat([error_results, error_links_df], ignore_index=True)
 
-            seen_urls.add(current_url)
-            status_text.text(f"Crawling {current_url} at depth {current_depth}... ({total_urls_processed}/{total_urls_to_process})")
-            success_links_df, error_links_df = await fetch_links(client, current_url, status_text)
-            success_results = pd.concat([success_results, success_links_df], ignore_index=True)
-            error_results = pd.concat([error_results, error_links_df], ignore_index=True)
-            
-            link_log = pd.concat([link_log, pd.DataFrame([{
-                "URL": current_url,
-                "Status": "Fetched",
-                "Depth": current_depth
-            }])], ignore_index=True)
+                    link_log = pd.concat([link_log, pd.DataFrame([{
+                        "URL": current_url,
+                        "Status": "Fetched",
+                        "Depth": current_depth
+                    }])], ignore_index=True)
 
-            total_urls_processed += 1
-            progress_bar.progress(total_urls_processed / total_urls_to_process)
+                    total_urls_processed += 1
+                    progress_bar.progress(total_urls_processed / total_urls_to_process)
 
-            # Update the estimated total number of URLs to process
-            for _, row in success_links_df.iterrows():
-                if row["URL"] not in seen_urls and current_depth + 1 <= max_depth:
-                    to_visit.append((row["URL"], current_depth + 1))
-                    if row["URL"] not in seen_urls:
-                        total_urls_to_process += 1
+                    for _, row in success_links_df.iterrows():
+                        if row["URL"] not in seen_urls and current_depth + 1 <= max_depth:
+                            to_visit.append((row["URL"], current_depth + 1))
+                            total_urls_to_process += 1
 
         return success_results.drop_duplicates(subset=["URL"]), error_results.drop_duplicates(subset=["URL"]), link_log
 
-# This version of the crawl function includes logic to handle duplicated URLs more explicitly and updates the status text with a counter.
+# This function now uses a semaphore to limit the number of concurrent fetch operations to 10.
 
 
 def app():
