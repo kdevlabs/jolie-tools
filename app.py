@@ -86,9 +86,7 @@ def get_friendly_http_error_message(status_code: int) -> str:
 
 # Uncomment to test the function
 # asyncio.run(fetch_links(httpx.AsyncClient(), "https://www.razer.com/"))
-from collections import deque
-# Correcting syntax error and enhancing the crawl function to log every link attempt with detailed status
-# Enhancing the crawl function to include more detailed status updates during URL and link checking
+from collections import deque# Enhancing the crawl function to better handle and log skipped URLs, and include a counter in status updates
 
 async def crawl(start_url: str, max_depth: int, progress_bar, status_text) -> (pd.DataFrame, pd.DataFrame, pd.DataFrame):
     async with httpx.AsyncClient() as client:
@@ -98,6 +96,7 @@ async def crawl(start_url: str, max_depth: int, progress_bar, status_text) -> (p
         error_results = pd.DataFrame()
         link_log = pd.DataFrame()
         total_urls_processed = 0
+        total_urls_to_process = 1  # Start with the initial URL
 
         while to_visit:
             current_url, current_depth = to_visit.popleft()
@@ -118,8 +117,8 @@ async def crawl(start_url: str, max_depth: int, progress_bar, status_text) -> (p
                 continue
 
             seen_urls.add(current_url)
-            status_text.text(f"Crawling {current_url} at depth {current_depth}...")  # Status update for crawling
-            success_links_df, error_links_df = await fetch_links(client, current_url, status_text)  # Pass status_text to fetch_links
+            status_text.text(f"Crawling {current_url} at depth {current_depth}... ({total_urls_processed}/{total_urls_to_process})")
+            success_links_df, error_links_df = await fetch_links(client, current_url, status_text)
             success_results = pd.concat([success_results, success_links_df], ignore_index=True)
             error_results = pd.concat([error_results, error_links_df], ignore_index=True)
             
@@ -130,19 +129,23 @@ async def crawl(start_url: str, max_depth: int, progress_bar, status_text) -> (p
             }])], ignore_index=True)
 
             total_urls_processed += 1
-            progress_bar.progress(total_urls_processed / (len(seen_urls) + len(to_visit)))
+            progress_bar.progress(total_urls_processed / total_urls_to_process)
 
+            # Update the estimated total number of URLs to process
             for _, row in success_links_df.iterrows():
                 if row["URL"] not in seen_urls and current_depth + 1 <= max_depth:
                     to_visit.append((row["URL"], current_depth + 1))
+                    if row["URL"] not in seen_urls:
+                        total_urls_to_process += 1
 
         return success_results.drop_duplicates(subset=["URL"]), error_results.drop_duplicates(subset=["URL"]), link_log
 
-# The fetch_links function also needs to be updated to include status updates for each link checked.
+# This version of the crawl function includes logic to handle duplicated URLs more explicitly and updates the status text with a counter.
+
 
 def app():
     st.title("Razer Link Checker")
-    st.set_page_config(layout="wide") 
+    
     start_url = st.text_input("Enter start URL", value="https://www.razer.com/gaming-mice/razer-orochi-v2")
     max_depth = st.number_input("Max crawl depth", value=1, min_value=1)
 
@@ -181,4 +184,5 @@ def app():
 # This adjusted function now displays a comprehensive log of all link attempts, enhancing transparency and tracking.
 
 if __name__ == "__main__":
+    st.set_page_config(layout="wide") 
     app()
