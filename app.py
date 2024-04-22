@@ -76,28 +76,28 @@ async def parse_links(client: httpx.AsyncClient, base_url: str, html_content: st
                 if response.status_code == 200:
                     success_links.append({
                         "Status": f"{response.status_code} OK - Success",
-                        "Text": link_text,
+                        "Text Link": link_text,
                         "URL": link_url,
-                        "Parent URL": base_url,
-                        "Parent Title": parent_title,
+                        "From Page": base_url,
+                        "Page Title": parent_title,
                     })
                 else:
                     # Collect error links differently if the status code is not 200
                     error_links.append({
                         "Status": f"{response.status_code} - Error",
-                        "Text": link_text,
+                        "Text Link": link_text,
                         "URL": link_url,
-                        "Parent URL": base_url,
-                        "Parent Title": parent_title,
+                        "From Page": base_url,
+                        "Page Title": parent_title,
                     })
             else:
                 # Append to error links if response is None (indicating an error occurred in fetch_link)
                 error_links.append({
                     "Status": "Fetch Error",
-                    "Text": link_text,
+                    "Text Link": link_text,
                     "URL": link_url,
-                    "Parent URL": base_url,
-                    "Parent Title": parent_title,
+                    "From Page": base_url,
+                    "Page Title": parent_title,
                 })
 
     return success_links, error_links
