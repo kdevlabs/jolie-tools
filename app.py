@@ -66,7 +66,7 @@ async def parse_links(client: httpx.AsyncClient, base_url: str, html_content: st
 
     for a in soup.find_all("a", href=True):
         link_url = urljoin(base_url, a.get("href"))
-        if "razer.com" in link_url:
+        if "www.razer.com" in link_url:
             link_text = a.text.strip() if a.text.strip() else (a.parent.text.strip() if a.parent else '')
             if not link_text:
                 link_text = a.parent.parent.text.strip() if a.parent and a.parent.parent else 'No text available'
@@ -118,7 +118,8 @@ async def crawl(start_url: str, max_depth: int, max_concurrent: int):
         status_text = st.empty()
         progress_bar = st.progress(0)
         to_visit = deque([(start_url, 0)])
-        seen_urls = set()
+        seen_urls = set([])  # Initialize seen_urls with the start_url
+
         all_success_links = []
         all_error_links = []
 
@@ -126,9 +127,11 @@ async def crawl(start_url: str, max_depth: int, max_concurrent: int):
             tasks = []
             while to_visit and len(tasks) < max_concurrent:
                 current_url, current_depth = to_visit.popleft()
-                if current_url not in seen_urls and current_depth <= max_depth:
-                    seen_urls.add(current_url)
-                    tasks.append(crawl_link(client, current_url, status_text, semaphore))
+                if current_depth <= max_depth:
+                    if current_url not in seen_urls:
+                        seen_urls.add(current_url)  # Mark as seen before scheduling
+                        task = crawl_link(client, current_url, status_text, semaphore)
+                        tasks.append(task)
             links_batch = await asyncio.gather(*tasks)
             for success_links, error_links in links_batch:
                 all_success_links.extend(success_links)
@@ -140,14 +143,13 @@ async def crawl(start_url: str, max_depth: int, max_concurrent: int):
         progress_bar.empty()
         status_text.empty()
         return pd.DataFrame(all_success_links), pd.DataFrame(all_error_links)
-
-
+    
 def app():
     st.title("Razer Link Checker")
 
     # Disable the form while processing to prevent multiple submissions
     with st.form(key='my_form'):
-        start_url = st.text_input("Enter start URL", value="https://www.razer.com")
+        start_url = st.text_input("Enter start URL", value="https://www.razer.com/gaming-mice/razer-orochi-v2")
         max_depth = st.number_input("Max crawl depth", value=0, min_value=0)
         submit_button = st.form_submit_button("Start Checking...")
 
@@ -158,6 +160,12 @@ def app():
             st.session_state['success_links'] = success_df
             st.session_state['error_links'] = error_df
         
+        if not st.session_state['error_links'].empty:
+            st.subheader("Error Links")
+            st.dataframe(st.session_state['error_links'])
+        else:
+            st.write("No error links encountered.")
+        
         # Display results
         if not st.session_state['success_links'].empty:
             st.subheader("Successful Links")
@@ -165,11 +173,6 @@ def app():
         else:
             st.write("No successful links found.")
         
-        if not st.session_state['error_links'].empty:
-            st.subheader("Error Links")
-            st.dataframe(st.session_state['error_links'])
-        else:
-            st.write("No error links encountered.")
 
 if __name__ == "__main__":
     st.set_page_config(layout="wide")
