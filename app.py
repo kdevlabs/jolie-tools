@@ -140,7 +140,7 @@ async def crawl(start_url: str, max_depth: int, max_concurrent: int):
 def app():
     st.title("Razer Link Checker")
     start_url = st.text_input("Enter start URL", value="https://www.razer.com/gaming-mice/razer-orochi-v2")
-    max_depth = st.number_input("Max crawl depth", value=1, min_value=1)
+    max_depth = st.number_input("Max crawl depth", value=1, min_value=0)
     if st.button("Start Checking..."):
         links_df = asyncio.run(crawl(start_url, max_depth, 5))
         if not links_df.empty:
