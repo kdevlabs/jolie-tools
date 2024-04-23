@@ -5,6 +5,8 @@ from urllib.parse import urljoin
 import pandas as pd
 from collections import deque
 import streamlit as st
+from functools import lru_cache
+from async_lru import alru_cache
 
 def get_friendly_http_error_message(status_code: int) -> str:
     """
@@ -34,11 +36,12 @@ def get_friendly_http_error_message(status_code: int) -> str:
     }
     return messages.get(status_code, f"{status_code} - Other error")
 
-async def fetch_link(client: httpx.AsyncClient, url: str, status_text, parent_url="", link_text: str = "No text"):
+@alru_cache
+async def fetch_link( url: str, parent_url="", link_text: str = "No text"):
     try:
+        client = httpx.AsyncClient()
         response = await client.get(url, follow_redirects=True)
         explain = get_friendly_http_error_message(response.status_code)
-        status_text.status(f"Checked URL [{url}] from [{parent_url}] - Result: {explain}")
         response.raise_for_status()
         return response
     except httpx.HTTPStatusError as e:
@@ -72,61 +75,63 @@ def get_base_host_url(base_url):
     base_host_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
     return base_host_url
 
-
 async def parse_links(client: httpx.AsyncClient, base_url: str, html_content: str, status_text, seen_urls):
     soup = BeautifulSoup(html_content, "html.parser")
     parent_title = soup.title.text if soup.title else "No Title Found"
-    success_links = []
-    error_links = []  # Separate list to collect error links
-    base_host_url = get_base_host_url(base_url)
-    
+    tasks = []
+    base_host_url = get_base_host_url(base_url)  # Assuming this function is defined to extract scheme and host
+
     for a in soup.find_all("a", href=True):
         link_url = urljoin(base_host_url, a.get("href"))
-        if link_url in seen_urls:
-            status_text.status(f"Skipped link: {link_url}")
+        if "www.razer.com" not in link_url:
             continue
-        
-        if "www.razer.com" in link_url:
-            link_text = a.text.strip() if a.text.strip() else (a.parent.text.strip() if a.parent else '')
-            if not link_text:
-                link_text = a.parent.parent.parent.text.strip() if a.parent and a.parent.parent and a.parent.parent.parent else 'No text available'
+        link_text = a.text.strip() or (a.parent.text.strip() if a.parent else 'No text available')
+        if not link_text:
+            link_text = (a.parent.parent.parent.text.strip() if a.parent and a.parent.parent and a.parent.parent.parent else 'No text available')
 
-            response = await fetch_link(client, link_url, status_text, base_url, link_text)
-            if response:
-                if response.status_code == 200:
-                    success_links.append({
-                        "Status": f"{response.status_code} OK - Success",
-                        "Text Link": link_text,
-                        "URL": link_url,
-                        "From Page": base_url,
-                        "Page Title": parent_title,
-                    })
-                else:
-                    # Collect error links differently if the status code is not 200
-                    error_links.append({
-                        "Status": f"{response.status_code} - Error",
-                        "Text Link": link_text,
-                        "URL": link_url,
-                        "From Page": base_url,
-                        "Page Title": parent_title,
-                    })
-            else:
-                # Append to error links if response is None (indicating an error occurred in fetch_link)
-                error_links.append({
-                    "Status": "Fetch Error",
-                    "Text Link": link_text,
-                    "URL": link_url,
-                    "From Page": base_url,
-                    "Page Title": parent_title,
-                })
+        # Create a task for each URL and append it to the task list
+        task = process_link(client, link_url, base_url, link_text, parent_title, status_text)
+        tasks.append(task)
 
+    # Await all tasks concurrently and process results
+    results = await asyncio.gather(*tasks)
+    success_links = [result for result in results if result and result["Status"].endswith("Success")]
+    error_links = [result for result in results if result and not result["Status"].endswith("Success")]
+    
     return success_links, error_links
+
+async def process_link(client, link_url, base_url, link_text, parent_title, status_text):
+    response = await fetch_link( link_url, base_url, link_text)
+    if response:
+        if response.status_code == 200:
+            return {
+                "Status": f"{response.status_code} OK - Success",
+                "Text Link": link_text,
+                "URL": link_url,
+                "From Page": base_url,
+                "Page Title": parent_title,
+            }
+        else:
+            return {
+                "Status": f"{response.status_code} - Error",
+                "Text Link": link_text,
+                "URL": link_url,
+                "From Page": base_url,
+                "Page Title": parent_title,
+            }
+    return {
+        "Status": "Fetch Error",
+        "Text Link": link_text,
+        "URL": link_url,
+        "From Page": base_url,
+        "Page Title": parent_title,
+    }
 
 
 async def crawl_link(client: httpx.AsyncClient, url: str, status_text, semaphore, seen_urls):
     async with semaphore:
         status_text.text(f"Checking link: {url}")
-        response = await fetch_link(client, url, status_text)
+        response = await fetch_link(url)
         if response:
             success_links, error_links = await parse_links(client, url, response.text, status_text, seen_urls)
             return success_links, error_links
@@ -167,14 +172,14 @@ def app():
 
     # Disable the form while processing to prevent multiple submissions
     with st.form(key='my_form'):
-        start_url = st.text_input("Enter start URL", value="https://www.razer.com/")
-        max_depth = st.number_input("Max crawl depth", value=3, min_value=0)
+        start_url = st.text_input("Enter start URL", value="https://www.razer.com/gaming-mice/razer-orochi-v2/")
+        max_depth = st.number_input("Max crawl depth", value=2, min_value=0)
         submit_button = st.form_submit_button("Start Checking...")
 
     if submit_button:
         # Disable UI components here if Streamlit supports dynamic updates in future releases
         with st.spinner('Checking in progress...'):
-            success_df, error_df = asyncio.run(crawl(start_url, max_depth, 20))
+            success_df, error_df = asyncio.run(crawl(start_url, max_depth, 1))
             st.session_state['success_links'] = success_df
             st.session_state['error_links'] = error_df
         
