@@ -57,15 +57,35 @@ async def fetch_link(client: httpx.AsyncClient, url: str, status_text, parent_ur
         st.error(f"An unexpected error occurred when fetching {url}: {str(e)}")
         return None
 
+from urllib.parse import urljoin, urlparse
 
-async def parse_links(client: httpx.AsyncClient, base_url: str, html_content: str, status_text):
+def get_base_host_url(base_url):
+    """
+    Extracts the scheme and host from a URL.
+    Args:
+    base_url (str): The full URL from which to extract the scheme and host.
+
+    Returns:
+    str: The base host URL consisting of scheme and host only.
+    """
+    parsed_url = urlparse(base_url)
+    base_host_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+    return base_host_url
+
+
+async def parse_links(client: httpx.AsyncClient, base_url: str, html_content: str, status_text, seen_urls):
     soup = BeautifulSoup(html_content, "html.parser")
     parent_title = soup.title.text if soup.title else "No Title Found"
     success_links = []
     error_links = []  # Separate list to collect error links
-
+    base_host_url = get_base_host_url(base_url)
+    
     for a in soup.find_all("a", href=True):
-        link_url = urljoin(base_url, a.get("href"))
+        link_url = urljoin(base_host_url, a.get("href"))
+        if link_url in seen_urls:
+            status_text.status(f"Skipped link: {link_url}")
+            continue
+        
         if "www.razer.com" in link_url:
             link_text = a.text.strip() if a.text.strip() else (a.parent.text.strip() if a.parent else '')
             if not link_text:
@@ -103,12 +123,12 @@ async def parse_links(client: httpx.AsyncClient, base_url: str, html_content: st
     return success_links, error_links
 
 
-async def crawl_link(client: httpx.AsyncClient, url: str, status_text, semaphore):
+async def crawl_link(client: httpx.AsyncClient, url: str, status_text, semaphore, seen_urls):
     async with semaphore:
         status_text.text(f"Checking link: {url}")
         response = await fetch_link(client, url, status_text)
         if response:
-            success_links, error_links = await parse_links(client, url, response.text, status_text)
+            success_links, error_links = await parse_links(client, url, response.text, status_text, seen_urls)
             return success_links, error_links
         return [], []
 
@@ -116,7 +136,6 @@ async def crawl(start_url: str, max_depth: int, max_concurrent: int):
     async with httpx.AsyncClient() as client:
         semaphore = asyncio.Semaphore(max_concurrent)
         status_text = st.empty()
-        progress_bar = st.progress(0)
         to_visit = deque([(start_url, 0)])
         seen_urls = set([])  # Initialize seen_urls with the start_url
 
@@ -130,7 +149,7 @@ async def crawl(start_url: str, max_depth: int, max_concurrent: int):
                 if current_depth <= max_depth:
                     if current_url not in seen_urls:
                         seen_urls.add(current_url)  # Mark as seen before scheduling
-                        task = crawl_link(client, current_url, status_text, semaphore)
+                        task = crawl_link(client, current_url, status_text, semaphore, seen_urls)
                         tasks.append(task)
             links_batch = await asyncio.gather(*tasks)
             for success_links, error_links in links_batch:
@@ -139,8 +158,7 @@ async def crawl(start_url: str, max_depth: int, max_concurrent: int):
                 for link in success_links:  # Assuming success_links contains dictionaries
                     if link["URL"] not in seen_urls:
                         to_visit.append((link["URL"], current_depth + 1))
-
-        progress_bar.empty()
+                        
         status_text.empty()
         return pd.DataFrame(all_success_links), pd.DataFrame(all_error_links)
     
@@ -149,8 +167,8 @@ def app():
 
     # Disable the form while processing to prevent multiple submissions
     with st.form(key='my_form'):
-        start_url = st.text_input("Enter start URL", value="https://www.razer.com/gaming-mice/razer-orochi-v2")
-        max_depth = st.number_input("Max crawl depth", value=0, min_value=0)
+        start_url = st.text_input("Enter start URL", value="https://www.razer.com/")
+        max_depth = st.number_input("Max crawl depth", value=3, min_value=0)
         submit_button = st.form_submit_button("Start Checking...")
 
     if submit_button:
